@@ -19,7 +19,7 @@
   // Pokémon affiché par défaut au chargement de la page.
   // Change ce nom si tu veux un autre Pokémon de départ.
   // Mets null ou '' pour ne pas charger de Pokémon par défaut.
-  const DEFAULT_POKEMON = "Gruikui";
+  const DEFAULT_POKEMON = "Pikachu";
   // =====================================================
 
   // URL de base de l'API Pokémon
@@ -34,6 +34,12 @@
   let errorMessage;
   let cardsContainer;
   let cardTemplate;
+  let tetrisLayer;
+  let tetrisPixels = [];
+  let pixelCols = 0;
+  let pixelRows = 0;
+  const PIXEL_SIZE = 22; // px
+  const PIXEL_GAP = 1; // px
 
   /**
    * Initialisation au chargement du DOM
@@ -67,6 +73,9 @@
     if (DEFAULT_POKEMON && DEFAULT_POKEMON.trim()) {
       loadDefaultPokemon(DEFAULT_POKEMON.trim());
     }
+
+    // Arrière-plan : grille façon écran de Tetris
+    setupTetrisGrid();
   });
 
   /**
@@ -275,6 +284,9 @@
         const badge = document.createElement("span");
         badge.className = "type-badge";
         badge.textContent = typeName;
+        const typeKey = normalizeTypeName(typeName);
+        badge.dataset.type = typeKey;
+        badge.classList.add("type-" + typeKey);
         typesContainer.appendChild(badge);
       });
     }
@@ -302,6 +314,123 @@
 
     // Ajoute la carte au conteneur
     cardsContainer.appendChild(card);
+
+    // Active l'effet d'inclinaison 3D interactif
+    enableCardTilt(card);
+  }
+
+  /**
+   * Active une inclinaison 3D douce en fonction de la position de la souris
+   * @param {HTMLElement} card - La carte à animer
+   */
+  function enableCardTilt(card) {
+    const MAX_TILT = 12; // degrés max d'inclinaison
+
+    const handleMove = function (event) {
+      const rect = card.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+
+      // Normalise entre -1 et 1
+      const percentX = (x / rect.width) * 2 - 1;
+      const percentY = (y / rect.height) * 2 - 1;
+
+      const tiltX = -(percentY * MAX_TILT);
+      const tiltY = percentX * MAX_TILT;
+
+      card.style.setProperty("--card-tilt-x", tiltX.toFixed(2) + "deg");
+      card.style.setProperty("--card-tilt-y", tiltY.toFixed(2) + "deg");
+      card.style.setProperty("--glow-x", (x / rect.width * 100).toFixed(1) + "%");
+      card.style.setProperty("--glow-y", (y / rect.height * 100).toFixed(1) + "%");
+    };
+
+    const resetTilt = function () {
+      card.style.setProperty("--card-tilt-x", "0deg");
+      card.style.setProperty("--card-tilt-y", "0deg");
+      card.style.setProperty("--glow-x", "50%");
+      card.style.setProperty("--glow-y", "50%");
+    };
+
+    card.addEventListener("mousemove", handleMove);
+    card.addEventListener("mouseleave", resetTilt);
+  }
+
+  /**
+   * Normalise le nom de type en slug simple (sans accents)
+   * @param {string} name
+   * @returns {string}
+   */
+  function normalizeTypeName(name) {
+    if (!name || typeof name !== "string") return "unknown";
+    return name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "unknown";
+  }
+
+  // ================================
+  // Grille de pixels façon écran Tetris
+  // ================================
+  function setupTetrisGrid() {
+    tetrisLayer = document.createElement("div");
+    tetrisLayer.className = "tetris-layer";
+    tetrisLayer.style.setProperty("--pixel-size", PIXEL_SIZE + "px");
+    tetrisLayer.style.setProperty("--pixel-gap", PIXEL_GAP + "px");
+    document.body.prepend(tetrisLayer);
+
+    buildTetrisGrid();
+    window.addEventListener("resize", buildTetrisGrid);
+    document.addEventListener("pointermove", handleTetrisPointerMove);
+  }
+
+  function buildTetrisGrid() {
+    if (!tetrisLayer) return;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    pixelCols = Math.max(1, Math.floor((width + PIXEL_GAP) / (PIXEL_SIZE + PIXEL_GAP)));
+    pixelRows = Math.max(1, Math.floor((height + PIXEL_GAP) / (PIXEL_SIZE + PIXEL_GAP)));
+
+    tetrisLayer.style.setProperty("--pixel-cols", pixelCols);
+    tetrisLayer.innerHTML = "";
+    tetrisPixels = new Array(pixelCols * pixelRows);
+
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < tetrisPixels.length; i++) {
+      const px = document.createElement("span");
+      px.className = "tetris-pixel";
+      tetrisPixels[i] = px;
+      frag.appendChild(px);
+    }
+    tetrisLayer.appendChild(frag);
+  }
+
+  function handleTetrisPointerMove(event) {
+    if (!tetrisPixels.length) return;
+    const cellWidth = PIXEL_SIZE + PIXEL_GAP;
+    const cellHeight = PIXEL_SIZE + PIXEL_GAP;
+    const col = Math.floor(event.clientX / cellWidth);
+    const row = Math.floor(event.clientY / cellHeight);
+    if (col < 0 || row < 0 || col >= pixelCols || row >= pixelRows) return;
+    const index = row * pixelCols + col;
+    const pixel = tetrisPixels[index];
+    if (!pixel) return;
+    lightPixel(pixel);
+  }
+
+  function lightPixel(pixel) {
+    pixel.classList.remove("is-lit"); // restart animation if already lit
+    void pixel.offsetWidth; // force reflow
+    pixel.classList.add("is-lit");
+    pixel.addEventListener(
+      "animationend",
+      function handle() {
+        pixel.classList.remove("is-lit");
+        pixel.removeEventListener("animationend", handle);
+      },
+      { once: true },
+    );
   }
 
   /**
